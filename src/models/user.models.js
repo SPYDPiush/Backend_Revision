@@ -8,7 +8,7 @@ const userSchema = new Schema(
       type: String,
       required: true,
       trim: true,
-      index: true,
+      index: true, // help to search fields in the database
       lowercase: true,
       unique: true,
     },
@@ -23,7 +23,6 @@ const userSchema = new Schema(
       type: String,
       required: true,
       trim: true,
-      unique: true,
     },
     avatar: {
       type: String, // cloudinary url
@@ -58,13 +57,17 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-userSchema.methods.isPasswordcorrect = async function(password){
-  return await bcrypt.compare(this.password,password)
+// userSchema.methods.isPasswordcorrect = async function(password){
+//   return await bcrypt.compare(password,this.password)
+// }
+
+userSchema.methods.isPasswordCorrect = async function(password){
+  return await bcrypt.compare(password, this.password)
 }
 
 userSchema.methods.generateAccessToken = function(){
 
-  return jwt.sign({
+  return  jwt.sign({
     _id:this._id,
     username: this.username,
     fullname : this.fullname,
@@ -77,9 +80,9 @@ userSchema.methods.generateAccessToken = function(){
 userSchema.methods.generateRefreshToken = function(){
 
   return jwt.sign({
-    email:this.email
+    _id:this._id
   },process.env.REFRESH_TOKEN_SECRET,{
-    expiresIn:REFRESH_TOKEN_EXPIRY
+    expiresIn:process.env.REFRESH_TOKEN_EXPIRY
   })
 }
 
