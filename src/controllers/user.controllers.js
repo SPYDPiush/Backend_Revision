@@ -213,6 +213,8 @@ const refreshAccessToken = asyncHandler( async (req,res) => {
 
   const incommingRefreshTOken =  req.cookies.refreshToken || req.body.refreshToken
 
+
+
   if(!incommingRefreshTOken){
     throw new apiError(401,"unauthorized request")
   }
@@ -220,6 +222,7 @@ const refreshAccessToken = asyncHandler( async (req,res) => {
   try {
 
     const decodedToken = jwt.verify(incommingRefreshTOken,process.env.REFRESH_TOKEN_SECRET)
+    
 
     if(!decodedToken){
       throw new apiError(401,"unathorized access")
@@ -227,16 +230,22 @@ const refreshAccessToken = asyncHandler( async (req,res) => {
 
     const user = await User.findById(decodedToken._id)
 
+ 
+
     if(!user){
       throw new apiError(400,"invalid refresh token")
     }
 
-    if(incommingRefreshTOken != user.refreshToken){
+
+    if(incommingRefreshTOken != user.refreshtoken){
       throw new apiError(401,"refresh token expired")
     }
 
+    
+
     const {accessToken,refreshToken} = await generateAccessTokenAndRefreshToken(user._id)
 
+    
     const option = {
       httpOnly:true,
       secure: true
@@ -266,5 +275,35 @@ const refreshAccessToken = asyncHandler( async (req,res) => {
 })
 
 
-export {registerUser,loginUser,logoutUser,refreshAccessToken}
+const changeCurrentPassword = asyncHandler( async(req,res) => {
+
+  const {oldPassword,newPassword} = req.body
+
+
+  const user =  await User.findById(req.user?._id)
+
+  if(!user){
+    throw new apiError(401,"Invalid authorization")
+  }
+
+  const isPasswordCorrect =  await user.isPasswordCorrect(oldPassword)
+
+  if(!isPasswordCorrect){
+    throw new apiError(400,"old password not correct")
+  }
+
+  user.password= newPassword
+
+  await user.save({validateBeforeSave:false})
+
+  return res.status(200).json(
+    new apiResponse(200,{},"Password change successfully")
+  )
+
+
+
+})
+
+
+export {registerUser,loginUser,logoutUser,refreshAccessToken,changeCurrentPassword}
 
