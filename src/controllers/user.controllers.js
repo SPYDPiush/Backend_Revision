@@ -4,6 +4,7 @@ import { User } from "../models/user.models.js";
 import { uploadONCloudinary } from "../utils/cloudinary.js";
 import { apiResponse } from "../utils/apiResponse.js";
 import jwt from 'jsonwebtoken'
+import mongoose, { mongo } from "mongoose";
 
 
 const generateAccessTokenAndRefreshToken = async (userid) => {
@@ -184,8 +185,8 @@ const logoutUser =  asyncHandler(async (req,res) => {
   await User.findByIdAndUpdate(
     req.user._id,
     {
-      $set:{
-        refreshtoken : undefined,
+      $unset:{
+        refreshtoken : 1,
       }
     },
     {
@@ -200,7 +201,7 @@ const logoutUser =  asyncHandler(async (req,res) => {
   }
 
 
-  res.status(200).
+  return res.status(200).
   clearCookie("accessToken",option)
   .clearCookie("refreshToken",option)
   .json(
@@ -251,7 +252,7 @@ const refreshAccessToken = asyncHandler( async (req,res) => {
       secure: true
     }
 
-    res.status(201)
+    return res.status(201)
     .cookie("accesToken",accessToken,option)
     .cookie("refreshToken",refreshToken,option)
     .json(
@@ -305,5 +306,196 @@ const changeCurrentPassword = asyncHandler( async(req,res) => {
 })
 
 
-export {registerUser,loginUser,logoutUser,refreshAccessToken,changeCurrentPassword}
+const getCurrentUser = asyncHandler( async(req,res) => {
+  const currentUser =  req.user
+
+  return res.status(201).json(
+    new apiResponse(201,req.user,"Current user fetched successfully")
+  )
+})
+
+const updateAvatar = asyncHandler( async(req,res) => {
+
+  const updateAvatarLocalPath = req.file?.path
+
+  if(!updateAvatarLocalPath){
+    throw new apiError(401,"avatar fill is missing")
+  }
+
+  const updateAvatarUrl = await uploadONCloudinary(updateAvatarLocalPath)
+
+  if(!updateAvatarUrl){
+    throw new apiError(400,"error while uploading avatar on cloud")
+  }
+
+
+  const user = await User.findByIdAndUpdate(req.user?._id,{
+    $set:{
+      avatar : updateAvatarUrl.url
+    }
+    
+  },
+  {
+    new : true
+  }).select("-password -refreshtoken")
+
+  // ////////////////// update avatar this method also //////////////////
+  // const user =await User.findById(req.user?._id)
+
+  // if(!user){
+  //   throw new apiError(401,"unauthorised user")
+  // }
+
+  // user.avatar=updateAvatarUrl.url
+
+  // user.save({validateBeforeSave:false})
+
+
+  // ////////////// method update end here....... ////////////
+
+
+  return res.status(200)
+  .json( 
+    new apiResponse(200,user,"Avatar updated Successfully")
+  )
+
+})
+
+
+const getUserChannelProfile = asyncHandler( async (req,res) => {
+
+  const {username} = req.params;
+
+  if(!username?.trim()){
+    throw new apiError(401,"username not found .")
+  }
+
+  const channelDetails = User.aggregate([
+    {
+      $match : {
+        username : username
+      }
+    },
+    {
+      $lookup : {
+        from: "subscriptions",
+        localField : "_id",
+        foreignField : "Channel",
+        as : "Subscribers"
+      }
+    },
+    {
+      $lookup : {
+        from: "subscriptions",
+        localField : "_id",
+        foreignField : "Subscriber",
+        as : "SubscribedTo"
+      }
+    },
+    {
+      $addFields : {
+        subscribersCount:{
+          $size:"Subscribers"
+        },
+        channelsSubscribedToCount:{
+          $size:"SubscribedTo"
+        },
+        
+          isSubscribed:{
+            $cond:{
+              if:{$in : [req.user?._id,"$subcribers.Subscriber" ]},
+              then:true,
+              else:false
+  
+            }
+          }
+      }
+    },
+    {
+      $project:{
+        fullname:1,
+        email:1,
+        username:1,
+        avatar:1,
+        coverimage:1,
+        watchhistory:1,
+        subscribersCount:1,
+        channelsSubscribedToCount:1,
+        isSubscribed:1
+
+      }
+    }
+  ])
+
+  console.log(channelDetails)
+
+if(!channelDetails?.length){
+  throw new apiError(404,"channel does not exist")
+}
+
+return res.status(200)
+.json(new apiResponse(200,channelDetails[0],"channel details fetch successfully"
+
+))
+})
+
+const getWatchHistory = asyncHandler( async(req,res) => {
+
+  const user =await User.aggregate([{
+    $match:{
+      _id : mongoose.Types.ObjectId(req.user?._id)
+    }
+  },
+  {
+    $lookup:
+    {
+      from:"videos",
+      localField:"watchhistory",
+      foreignField:"_id",
+      as:"watchHistory",
+      pipeline:[
+        {
+          $lookup:{
+            from: "users",
+            localField:"owner",
+            foreignField:"_id",
+            as:"owner",
+            pipeline:[
+              {
+                $project:{
+                  fullname:1,
+                  username:1,
+                  avatar:1
+                }
+              }
+            ]
+          }
+        },
+        {
+          $addFields:{
+            owner:{
+              $first:"owner"
+            }
+           
+          }
+        }
+      ]
+    }
+  }
+])
+
+
+return res.status(200).json(new apiResponse(200,user[0].watchHistory,"watch History fetched successfully"))
+
+
+
+
+
+
+
+})
+
+
+
+export {registerUser,loginUser,logoutUser,refreshAccessToken,changeCurrentPassword,getCurrentUser,updateAvatar,getUserChannelProfile,getWatchHistory}
 
